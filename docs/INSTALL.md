@@ -1,7 +1,10 @@
 # Installation
 
 Use the requirements and dependency installation steps in the [README](../README.md)
-first. Keep Codex Desktop running and confirm that `codex` is on `PATH`.
+first. Confirm that the authenticated `codex` CLI is on `PATH`. Keep Codex
+Desktop running for the default `CODEX_CLI_ONLY=false` mode. For a CLI-only host,
+set `CODEX_CLI_ONLY=true` in the repository-root `.env` before starting or
+installing; no Desktop app or IPC socket is required.
 
 ## 1. Check local access
 
@@ -12,7 +15,7 @@ pnpm dev
 Open `http://127.0.0.1:4312` on the host and confirm chats appear. Stop development
 mode before installing the service; both use port 4312.
 
-If the Desktop socket is not detected, set `CODEX_IPC_SOCKET` to its actual
+In Desktop mode, if the socket is not detected, set `CODEX_IPC_SOCKET` to its actual
 location. The Linux default is `${CODEX_HOME:-~/.codex}/ipc/ipc.sock`. See
 [Configuration](CONFIGURATION.md) for overrides.
 
@@ -50,7 +53,10 @@ value with a stronger password in the environment file. Maintain valid shell and
 systemd EnvironmentFile quoting, because both read this file.
 
 The installer runs browser readiness checks and reports failure if they do not
-pass. Have Chrome, Codex Desktop, and the private HTTPS address ready first.
+pass. Have Chrome, the authenticated CLI, and the private HTTPS address ready
+first; Desktop must also be running unless CLI-only mode is enabled. After the
+installer creates the private environment file, you can put `CODEX_CLI_ONLY=true`
+there alongside the generated password to keep the mode in service configuration.
 These checks send small prompts in a dedicated test chat and use Codex quota.
 
 ## 4. Install on your phone
@@ -103,13 +109,13 @@ pnpm install --frozen-lockfile
 
 | Problem | Check |
 | --- | --- |
-| Missing chats or IPC disconnected | Start Desktop; check `CODEX_HOME` and `CODEX_IPC_SOCKET`. |
+| Missing chats or IPC disconnected | In Desktop mode, start Desktop and check `CODEX_IPC_SOCKET`. In CLI-only mode, check CLI login, `PATH`, and `CODEX_HOME`; Desktop is not needed. |
 | Protocol validation error | Capture the error name and versions, without raw chats or credentials. Desktop/CLI versions may be incompatible. |
 | Lock screen repeats | Check the password, expiry, HTTPS origin, and secure-cookie setting. |
 | Phone cannot connect | Check Tailscale connections, Serve status, host sleep, and local service status. |
 | Readiness test cannot launch a browser | Install Google Chrome; tests use `channel: "chrome"`. |
 | Readiness test model unavailable | Set `CODEX_MOBILE_SMOKE_MODEL` to a model in your account's picker. |
-| Usage/resets unavailable | Keep Desktop open; the host must provide the matching local tools. |
+| Usage/resets unavailable | Unavailable in CLI-only mode. Otherwise keep Desktop open; the host must provide the matching local tools. |
 | Voice unavailable | Check HTTPS, speech support, and microphone permissions. |
 
 The installed service sets `FARFIELD_AUTH_COOKIE_SECURE=1`. For temporary local
