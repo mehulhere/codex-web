@@ -70,6 +70,12 @@ test("CLI-only browser sends, resumes, answers requests and manages queues witho
       assert(response.ok(), `${method} ${route}: ${response.status()} ${await response.text()}`); return response.json();
     };
     const base = "/api/threads/thread-cli";
+    const admitted = await api(`${base}/queue`, "POST", { text: "Explicit queued message" });
+    await page.getByRole("region", { name: "Queued follow-ups" }).getByText("Explicit queued message", { exact: true }).waitFor();
+    await api(`${base}/queue/${admitted.messageId}`, "DELETE");
+    await api(`${base}/queue`, "POST", { text: "Start native queue" });
+    await page.getByRole("button", { name: "Steer Start native queue", exact: true }).click();
+    await page.getByText("Started: Start native queue", { exact: true }).waitFor();
     const send = async text => {
       const composer = page.getByPlaceholder(/^(Message Codex…|Ask for follow-up changes)$/);
       await composer.fill(text);
@@ -103,6 +109,7 @@ test("CLI-only browser sends, resumes, answers requests and manages queues witho
     await page.getByRole("button", { name: "Submit answers", exact: true }).click();
     await page.getByText('{"answers":{"choice":{"answers":["Blue"]}}}', { exact: true }).waitFor();
     await send("hold");
+    assert.equal((await context.request.post(`${app.origin}${base}/queue`, { data: { text: "Do not release a running chat" } })).status(), 409);
     await send("queued example");
     const queue = page.getByRole("region", { name: "Queued follow-ups" });
     await queue.getByText("queued example", { exact: true }).waitFor();

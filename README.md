@@ -58,7 +58,7 @@ Phone or browser
       v
 Codex Web: React PWA + local Node.js HTTP/SSE server
       |
-      +-- Codex Desktop IPC: live state and Desktop coordination
+      +-- Codex Desktop IPC: live state and coordination (default mode only)
       +-- codex app-server: chat history, messages, models, and shared queue
 ```
 

@@ -69,3 +69,13 @@ session-wide policy amendments are not offered. Unknown server requests fail
 explicitly instead of receiving an automatic approval. Pending approvals expire
 when their turn completes, the server resolves them, the transport closes, or
 after ten minutes. No approval is persisted.
+
+The native CLI queue belongs to the app-server process that accepted it. To
+explicitly admit a text-only queue entry without starting a turn, authenticated
+CLI-only clients can `POST /api/threads/:threadId/queue` with `{ "text": "..." }`.
+The chat must be idle with no local follow-ups. Its idle engine is released
+before admission so Codex does not immediately consume the entry. The response
+contains `messageId`; the existing queue read/edit/delete/steer routes operate
+on that same native record. Resuming or starting the chat can consume it. The
+live verifier uses this route in CLI-only mode instead
+of assuming a separate CLI process shares Desktop's admitted queue.

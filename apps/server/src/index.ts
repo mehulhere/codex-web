@@ -2025,6 +2025,24 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (segments[3] === "queue") {
+        if (CLI_ONLY && req.method === "POST" && segments.length === 4) {
+          const body = parseBody(z.object({ text: z.string().trim().min(1).max(100_000) }).strict(), await readLimitedJsonBody(req));
+          if (await hasAppServerActiveTurn(threadId) || appServerFollowUpQueue.size(threadId) > 0) {
+            jsonResponse(res, 409, { ok: false, error: "Explicit queue admission requires an idle chat with no local follow-ups" });
+            return;
+          }
+          // A loaded idle CLI engine immediately consumes native queue additions.
+          // Release this idle engine before admitting a message intended for later.
+          await runAppServerCall(() => appClient.unsubscribeThread(threadId));
+          appServerOwnedThreadIds.delete(threadId);
+          unmaterializedThreadSettingsById.delete(threadId);
+          const submission = await runAppServerCall(() => appClient.addQueuedSubmission(threadId, [
+            { type: "text", text: body.text, text_elements: [] }
+          ], randomUUID()));
+          broadcastSse({ type: "queued-follow-ups-changed", threadId });
+          jsonResponse(res, 200, QueuedFollowUpActionResponseSchema.parse({ ok: true, threadId, messageId: submission.id }));
+          return;
+        }
         if (req.method === "GET" && segments.length === 4) {
           jsonResponse(res, 200, QueuedFollowUpsResponseSchema.parse({
             ok: true, threadId, ownerClientId: getThreadLiveState(threadId).ownerClientId,
@@ -2050,7 +2068,6 @@ const server = http.createServer(async (req, res) => {
               return;
             }
           } else if (req.method === "POST" && segments[5] === "steer") {
-            if (CLI_ONLY) await runAppServerCall(() => appClient.resumeThreadMetadata(threadId));
             await runAppServerCall(() => appClient.sendQueuedSubmissionNow(threadId, admitted));
           } else {
             jsonResponse(res, 405, { ok: false, error: "Unsupported queued message action", threadId });

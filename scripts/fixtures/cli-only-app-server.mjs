@@ -5,6 +5,7 @@ const notify = (method, params) => send({ method, params });
 let sequence = 0;
 const threads = new Map();
 const requests = new Map();
+const queues = new Map();
 function create(id, cwd = "/workspace/example") {
   const thread = { id, preview: "CLI example chat", createdAt: 1, updatedAt: 1,
     cwd, model: "model-test", modelProvider: "openai", reasoningEffort: "high", status: { type: "idle" },
@@ -36,8 +37,27 @@ readline.createInterface({ input: process.stdin }).on("line", line => {
     case "thread/read": result = { thread }; break;
     case "thread/start": result = metadata(create(`thread-${++sequence}`, p.cwd)); break;
     case "thread/resume": result = metadata(thread); break;
+    case "thread/unsubscribe": result = { status: "unsubscribed" }; break;
     case "thread/settings/update": thread.model = p.model ?? thread.model; result = {}; break;
-    case "thread/queue/list": result = { data: [], nextCursor: null }; break;
+    case "thread/queue/list": result = { data: [...(queues.get(p.threadId) ?? [])], nextCursor: null }; break;
+    case "thread/queue/add": {
+      const queuedSubmission = { id: `queue-${++sequence}`, clientUserMessageId: p.clientUserMessageId, input: p.input };
+      queues.set(p.threadId, [...(queues.get(p.threadId) ?? []), queuedSubmission]); result = { queuedSubmission }; break;
+    }
+    case "thread/queue/update": {
+      const queuedSubmission = (queues.get(p.threadId) ?? []).find(message => message.id === p.queuedSubmissionId);
+      queuedSubmission.input = p.input; result = { queuedSubmission }; break;
+    }
+    case "thread/queue/delete": {
+      queues.set(p.threadId, (queues.get(p.threadId) ?? []).filter(message => message.id !== p.queuedSubmissionId)); result = { deleted: true }; break;
+    }
+    case "thread/queue/start": {
+      const message = (queues.get(p.threadId) ?? []).find(message => message.id === p.queuedSubmissionId);
+      queues.set(p.threadId, (queues.get(p.threadId) ?? []).filter(message => message.id !== p.queuedSubmissionId));
+      const turn = { id: `turn-${++sequence}`, status: "inProgress", items: [] };
+      thread.turns.push(turn); result = { turn };
+      setTimeout(() => finish(thread, turn, `Started: ${message.input[0].text}`), 50); break;
+    }
     case "model/list": result = { data: [{ id: "model-test", model: "model-test", displayName: "Test model", description: "Synthetic", upgrade: null,
       supportedReasoningEfforts: [{ reasoningEffort: "high", description: "High" }], defaultReasoningEffort: "high", inputModalities: ["text", "image"], supportsPersonality: false, isDefault: true }], nextCursor: null }; break;
     case "collaborationMode/list": result = { data: [{ name: "Default", mode: "default", model: "model-test", reasoning_effort: "high", developer_instructions: null }] }; break;
