@@ -136,6 +136,49 @@ test("CLI-only browser sends, resumes, answers requests and manages queues witho
   } finally { await browser?.close(); await app.close(); }
 });
 
+test("CLI-only new chat supports settings, reload and first send before any rollout exists", { timeout: 30_000 }, async () => {
+  const app = await fixture("true");
+  let browser;
+  try {
+    browser = await chromium.launch({ channel: "chrome", headless: true });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage(); page.setDefaultTimeout(10_000);
+    const failures = [];
+    page.on("response", response => { if (response.url().startsWith(app.origin + "/api/") && response.status() >= 400) failures.push(`${response.status()} ${new URL(response.url()).pathname}`); });
+    page.on("pageerror", error => failures.push(error.message));
+    await page.goto(`${app.origin}/threads/thread-cli`);
+    await page.getByLabel("Password", { exact: true }).fill("synthetic-password");
+    await page.getByLabel("Password", { exact: true }).press("Enter");
+    await page.getByLabel("CLI connected", { exact: true }).waitFor();
+    const [created] = await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === "/api/threads" && response.request().method() === "POST"),
+      page.getByRole("button", { name: /New thread in/ }).click()
+    ]);
+    assert(created.ok());
+    const { threadId } = await created.json();
+    const base = `/api/threads/${threadId}`;
+    const live = await context.request.get(app.origin + base + "/live-state");
+    assert(live.ok(), `New chat live state: ${live.status()} ${await live.text()}`);
+    assert.deepEqual((await live.json()).conversationState.turns, []);
+    const patch = await context.request.patch(app.origin + base + "/settings", { data: { model: "model-test", effort: "low" } });
+    assert(patch.ok(), `New chat settings: ${patch.status()} ${await patch.text()}`);
+    const settings = await (await context.request.get(app.origin + base + "/settings")).json();
+    assert.equal(settings.reasoningEffort, "low");
+    const mode = await context.request.post(app.origin + base + "/collaboration-mode", { data: { collaborationMode: { mode: "default", settings: { model: "model-test", reasoning_effort: "high", developer_instructions: null } } } });
+    assert(mode.ok(), `New chat mode: ${mode.status()} ${await mode.text()}`);
+    await page.reload();
+    await page.getByText("No messages yet", { exact: true }).waitFor();
+    const composer = page.getByPlaceholder("Message Codex…", { exact: true });
+    await composer.fill("new chat first message");
+    await page.getByRole("button", { name: "Send message", exact: true }).click();
+    await page.getByText("Reply: new chat first message", { exact: true }).waitFor();
+    assert.deepEqual(failures, []);
+    assert.equal(app.connections(), 0);
+  } catch (error) {
+    throw new Error(`New chat check: ${error.message}\nSynthetic server diagnostics: ${app.logs()}`, { cause: error });
+  } finally { await browser?.close(); await app.close(); }
+});
+
 for (const setting of [undefined, "false"]) test(`Desktop mode still requires IPC with CODEX_CLI_ONLY=${setting ?? "unset"}`, { timeout: 15_000 }, async () => {
   const app = await fixture(setting);
   try {

@@ -1710,6 +1710,17 @@ const server = http.createServer(async (req, res) => {
           )
       );
 
+      if (CLI_ONLY && !archived && !cursor) {
+        // The CLI omits new chats from its durable list until the first message.
+        // Include this process's pending chats so a browser reload can select them.
+        const listedIds = new Set(result.data.map(thread => thread.id));
+        const pending = [...unmaterializedThreadSettingsById.values()]
+          .map(started => started.thread)
+          .filter(thread => !thread.ephemeral && !listedIds.has(thread.id))
+          .reverse();
+        result.data.unshift(...pending);
+      }
+
       conditionalJsonResponse(req, res, {
         ok: true,
         ...enrichThreadSidebar(enrichThreadActivity(result, rolloutActivityReader))
@@ -1873,7 +1884,7 @@ const server = http.createServer(async (req, res) => {
         const settings = await runAppServerCall(() =>
           appClient.readThreadSettings(
             threadId,
-            unmaterializedThreadSettingsById.get(threadId),
+            CLI_ONLY ? undefined : unmaterializedThreadSettingsById.get(threadId),
             threadStreamStateAccumulator.get(threadId)?.conversationState ?? undefined
           )
         );
@@ -1961,7 +1972,9 @@ const server = http.createServer(async (req, res) => {
           UpdateThreadSettingsBodySchema,
           await readLimitedJsonBody(req)
         );
-        if (CLI_ONLY) await runAppServerCall(() => appClient.resumeThreadMetadata(threadId));
+        if (CLI_ONLY && !unmaterializedThreadSettingsById.has(threadId)) {
+          await runAppServerCall(() => appClient.resumeThreadMetadata(threadId));
+        }
         await runAppServerCall(() =>
           appClient.updateThreadSettings({ threadId, ...body })
         );
@@ -1978,7 +1991,10 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (req.method === "GET" && segments.length === 3) {
-        const includeTurns = parseBoolean(url.searchParams.get("includeTurns"), true);
+        // A new CLI thread has metadata but no rollout until its first user message.
+        // Keep reloads readable even when the browser no longer remembers that state.
+        const includeTurns = parseBoolean(url.searchParams.get("includeTurns"), true) &&
+          !(CLI_ONLY && unmaterializedThreadSettingsById.has(threadId));
         let result;
         try {
           result = await runAppServerCall(() => appClient.readThread(threadId, includeTurns));
@@ -2000,7 +2016,9 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "GET" && segments[3] === "live-state") {
         const live = CLI_ONLY ? {
           ownerClientId: null,
-          conversationState: (await runAppServerCall(() => appClient.readThread(threadId, true))).thread
+          conversationState: (await runAppServerCall(() =>
+            appClient.readThread(threadId, !unmaterializedThreadSettingsById.has(threadId))
+          )).thread
         } : getThreadLiveState(threadId);
         const queuedFollowUps = await serializeFollowUpQueues(threadId, requestSessionKey ?? "local");
         jsonResponse(res, 200, {
@@ -2440,7 +2458,9 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "POST" && segments[3] === "collaboration-mode") {
         if (CLI_ONLY) {
           const body = parseBody(SetModeBodySchema, await readLimitedJsonBody(req));
-          await runAppServerCall(() => appClient.resumeThreadMetadata(threadId));
+          if (!unmaterializedThreadSettingsById.has(threadId)) {
+            await runAppServerCall(() => appClient.resumeThreadMetadata(threadId));
+          }
           await runAppServerCall(() => appClient.updateThreadSettings({ threadId, collaborationMode: body.collaborationMode }));
           jsonResponse(res, 200, { ok: true, threadId, ownerClientId: null });
           return;

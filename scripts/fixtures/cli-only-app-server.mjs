@@ -6,6 +6,7 @@ let sequence = 0;
 const threads = new Map();
 const requests = new Map();
 const queues = new Map();
+const unmaterialized = new Set();
 function create(id, cwd = "/workspace/example") {
   const thread = { id, preview: "CLI example chat", createdAt: 1, updatedAt: 1,
     cwd, model: "model-test", modelProvider: "openai", reasoningEffort: "high", status: { type: "idle" },
@@ -33,12 +34,26 @@ readline.createInterface({ input: process.stdin }).on("line", line => {
   let result;
   switch (message.method) {
     case "initialize": result = { userAgent: "synthetic-test" }; break;
-    case "thread/list": result = { data: [...threads.values()].map(t => metadata(t).thread), nextCursor: null }; break;
-    case "thread/read": result = { thread }; break;
-    case "thread/start": result = metadata(create(`thread-${++sequence}`, p.cwd)); break;
-    case "thread/resume": result = metadata(thread); break;
+    case "thread/list": result = { data: [...threads.values()].filter(t => !unmaterialized.has(t.id)).map(t => metadata(t).thread), nextCursor: null }; break;
+    case "thread/read":
+      if (p.includeTurns && unmaterialized.has(thread.id)) {
+        send({ id: message.id, error: { code: -32600, message: "Thread is not materialized yet; includeTurns is unavailable before first user message" } }); return;
+      }
+      result = { thread: { ...thread, turns: p.includeTurns ? thread.turns : [] } }; break;
+    case "thread/start": {
+      const started = create(`thread-${++sequence}`, p.cwd); started.turns = [];
+      unmaterialized.add(started.id); result = metadata(started); break;
+    }
+    case "thread/resume":
+      if (unmaterialized.has(thread.id)) {
+        send({ id: message.id, error: { code: -32600, message: "No rollout found for thread before first message" } }); return;
+      }
+      result = metadata(thread); break;
     case "thread/unsubscribe": result = { status: "unsubscribed" }; break;
-    case "thread/settings/update": thread.model = p.model ?? thread.model; result = {}; break;
+    case "thread/settings/update":
+      thread.model = p.model ?? p.collaborationMode?.settings.model ?? thread.model;
+      thread.reasoningEffort = p.effort ?? p.collaborationMode?.settings.reasoning_effort ?? thread.reasoningEffort;
+      result = {}; break;
     case "thread/queue/list": result = { data: [...(queues.get(p.threadId) ?? [])], nextCursor: null }; break;
     case "thread/queue/add": {
       const queuedSubmission = { id: `queue-${++sequence}`, clientUserMessageId: p.clientUserMessageId, input: p.input };
@@ -62,6 +77,7 @@ readline.createInterface({ input: process.stdin }).on("line", line => {
       supportedReasoningEfforts: [{ reasoningEffort: "high", description: "High" }], defaultReasoningEffort: "high", inputModalities: ["text", "image"], supportsPersonality: false, isDefault: true }], nextCursor: null }; break;
     case "collaborationMode/list": result = { data: [{ name: "Default", mode: "default", model: "model-test", reasoning_effort: "high", developer_instructions: null }] }; break;
     case "turn/start": {
+      unmaterialized.delete(thread.id);
       const text = p.input.find(part => part.type === "text")?.text ?? "";
       const turn = { id: `turn-${++sequence}`, status: "inProgress", items: [] };
       thread.turns.push(turn); thread.status = { type: "active", activeFlags: [] }; thread.updatedAt++;
