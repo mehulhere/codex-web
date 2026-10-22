@@ -23,6 +23,8 @@ jobs:
         run: |
           npm install --global pnpm@10.29.3
           pnpm install --frozen-lockfile
+      - name: Verify recorded upstream protocol releases
+        run: pnpm protocol:verify-releases
       - name: Install browser for regression tests
         run: pnpm --filter @farfield/server exec playwright-core install --with-deps chrome
       - run: pnpm build
