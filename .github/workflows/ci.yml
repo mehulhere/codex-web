@@ -1,0 +1,32 @@
+name: Source and regression checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Check public source boundaries
+        run: node scripts/check-public-source.mjs
+      - name: Install pinned package manager and dependencies
+        run: |
+          npm install --global pnpm@10.29.3
+          pnpm install --frozen-lockfile
+      - name: Install browser for regression tests
+        run: pnpm --filter @farfield/server exec playwright-core install --with-deps chrome
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm check:public

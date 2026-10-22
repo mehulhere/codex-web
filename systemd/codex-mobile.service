@@ -1,0 +1,21 @@
+[Unit]
+Description=Codex Mobile private PWA
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__PROJECT_DIR__
+EnvironmentFile=%h/.config/codex-mobile/environment
+Environment=PATH=__TOOL_PATH__
+Environment=HOST=0.0.0.0
+Environment=PORT=4312
+Environment=FARFIELD_SERVE_WEB=1
+ExecStart="__NODE_PATH__" "__PROJECT_DIR__/apps/server/dist/index.js"
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+KillMode=control-group
+
+[Install]
+WantedBy=default.target

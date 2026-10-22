@@ -1,0 +1,9 @@
+[Unit]
+Description=Codex Mobile backend and PWA health check
+After=codex-mobile.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/codex-mobile/environment
+Environment=PATH=__TOOL_PATH__
+ExecStart=__PROJECT_DIR__/scripts/codex-mobile-watchdog.sh

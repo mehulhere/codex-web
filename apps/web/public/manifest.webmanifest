@@ -1,0 +1,19 @@
+{
+  "name": "Codex Mobile",
+  "short_name": "Codex",
+  "description": "Private mobile control for tasks running in Codex Desktop",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#101010",
+  "theme_color": "#101010",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/codex-mobile.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

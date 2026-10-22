@@ -1,0 +1,30 @@
+{
+  "name": "farfield",
+  "private": true,
+  "packageManager": "pnpm@10.29.3",
+  "scripts": {
+    "dev": "pnpm --filter @farfield/protocol build && pnpm --filter @farfield/api build && pnpm --parallel --filter @farfield/server --filter @farfield/web dev",
+    "dev:remote": "pnpm --filter @farfield/protocol build && pnpm --filter @farfield/api build && pnpm --parallel --filter @farfield/server --filter @farfield/web dev:remote",
+    "start:remote": "pnpm build && pnpm --parallel --filter @farfield/server --filter @farfield/web start:remote",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test && node --test scripts/*.test.mjs",
+    "test:pwa": "node scripts/pwa-smoke-test.mjs",
+    "pwa:on": "./scripts/start-codex-pwa.sh",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "verify": "pnpm build && pnpm test && pnpm typecheck && pnpm lint",
+    "sanitize:traces": "node scripts/sanitize-traces.mjs",
+    "test:pwa-queue": "node scripts/pwa-queue-test.mjs",
+    "check:public": "node scripts/check-public-source.mjs"
+  },
+  "devDependencies": {
+    "@types/busboy": "^1.5.4",
+    "@types/node": "^24.10.13",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
