@@ -139,16 +139,28 @@ test("CLI-only browser sends, resumes, answers requests and manages queues witho
 test("CLI-only new chat supports settings, reload and first send before any rollout exists", { timeout: 30_000 }, async () => {
   const app = await fixture("true");
   let browser;
+  let page;
+  const observed = [];
   try {
     browser = await chromium.launch({ channel: "chrome", headless: true });
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-    const page = await context.newPage(); page.setDefaultTimeout(10_000);
+    page = await context.newPage(); page.setDefaultTimeout(10_000);
     const failures = [];
-    page.on("response", response => { if (response.url().startsWith(app.origin + "/api/") && response.status() >= 400) failures.push(`${response.status()} ${new URL(response.url()).pathname}`); });
+    page.on("response", response => {
+      if (!response.url().startsWith(app.origin + "/api/") && response.url() !== app.origin + "/events") return;
+      const entry = `${response.request().method()} ${response.status()} ${new URL(response.url()).pathname}`;
+      observed.push(entry);
+      if (response.status() >= 400) failures.push(entry);
+    });
     page.on("pageerror", error => failures.push(error.message));
     await page.goto(`${app.origin}/threads/thread-cli`);
     await page.getByLabel("Password", { exact: true }).fill("synthetic-password");
-    await page.getByLabel("Password", { exact: true }).press("Enter");
+    const [login] = await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === "/api/auth/login" && response.request().method() === "POST"),
+      page.getByRole("button", { name: "Unlock", exact: true }).click()
+    ]);
+    assert(login.ok(), `Login rejected: ${login.status()}`);
+    await page.getByRole("form", { name: "Unlock Codex Mobile" }).waitFor({ state: "hidden" });
     await page.getByLabel("CLI connected", { exact: true }).waitFor();
     const [created] = await Promise.all([
       page.waitForResponse(response => new URL(response.url()).pathname === "/api/threads" && response.request().method() === "POST"),
@@ -175,7 +187,8 @@ test("CLI-only new chat supports settings, reload and first send before any roll
     assert.deepEqual(failures, []);
     assert.equal(app.connections(), 0);
   } catch (error) {
-    throw new Error(`New chat check: ${error.message}\nSynthetic server diagnostics: ${app.logs()}`, { cause: error });
+    const screen = page && !page.isClosed() ? await page.locator("body").innerText().catch(() => "Unavailable") : "Unavailable";
+    throw new Error(`New chat check: ${error.message}\nObserved synthetic requests: ${JSON.stringify(observed)}\nSynthetic screen: ${screen}\nSynthetic server diagnostics: ${app.logs()}`, { cause: error });
   } finally { await browser?.close(); await app.close(); }
 });
 
