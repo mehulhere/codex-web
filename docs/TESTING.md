@@ -8,6 +8,7 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm check:public
+pnpm protocol:verify-releases
 ```
 
 These use synthetic data rather than your Desktop chats. Chrome is required for

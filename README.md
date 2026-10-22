@@ -142,6 +142,15 @@ Most tests use synthetic data and do not need a live Codex account. Browser-base
 regression and preview tests require Chrome. Live checks are separate and must
 only target the isolated test chat. See [Contributing](CONTRIBUTING.md).
 
+## Keeping up with Codex protocol changes
+
+`pnpm protocol:check` detects drift against the CLI's own generated schemas.
+CI regenerates the contracts for recorded releases, and a maintenance agent can
+prepare fixes as tested PRs before promoting them on an opted-in host. Desktop
+IPC changes also require real browser verification. See
+[Protocol maintenance](docs/PROTOCOL-MAINTENANCE.md) for the repair/deployment
+sequence and its limits.
+
 ## Project layout
 
 ```text
