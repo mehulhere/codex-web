@@ -1,3 +1,4 @@
+import { CliPendingRequestSchema } from "@farfield/protocol";
 import {
   AppServerCollaborationModeListResponseSchema,
   AppServerListModelsResponseSchema,
@@ -67,7 +68,8 @@ const HealthResponseSchema = z
         ipcConnected: z.boolean(),
         ipcInitialized: z.boolean(),
         requiresAuth: z.boolean(),
-        multiAccount: z.boolean()
+        multiAccount: z.boolean(),
+        cliOnly: z.boolean().default(false)
       })
       .strict()
   })
@@ -91,6 +93,7 @@ const LiveStateResponseSchema = z
     threadId: z.string(),
     ownerClientId: z.string().nullable(),
     conversationState: z.union([ThreadConversationStateSchema, z.null()]),
+    cliRequests: z.array(CliPendingRequestSchema).optional(),
     queuedFollowUps: z
       .array(
         z
@@ -322,6 +325,12 @@ const ConsumeUsageResetResponseSchema = UsageResetResponseSchema.extend({ messag
 
 export async function getUsageResetStatus(threadId: string): Promise<UsageResetStatus> {
   return UsageResetResponseSchema.parse(await request(`/api/accounts/resets?threadId=${encodeURIComponent(threadId)}`)).status;
+}
+
+export async function replyToCliRequest(threadId: string, id: string, reply: unknown): Promise<void> {
+  await request(`/api/threads/${encodeURIComponent(threadId)}/cli-requests/${encodeURIComponent(id)}`, {
+    method: "POST", body: JSON.stringify(reply)
+  });
 }
 
 export async function consumeUsageReset(threadId: string, idempotencyKey: string) {

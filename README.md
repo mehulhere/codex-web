@@ -3,11 +3,15 @@
 [![Checks](https://github.com/mehulhere/codex-web/actions/workflows/ci.yml/badge.svg)](https://github.com/mehulhere/codex-web/actions/workflows/ci.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Your Codex Desktop chats, in a browser that fits your phone.**
+**Your Codex chats, in a browser that fits your phone.**
 
 Codex Web is a self-hosted PWA for reading and continuing chats running on your
 own Linux computer. Open a chat from your phone, follow the agent's work, send a
 follow-up, and see the same queue on Desktop and the web.
+
+The default is the **Desktop companion**. Set `CODEX_CLI_ONLY=true` for a
+standalone Codex CLI installation that does not connect to or require Desktop.
+Both modes run commands and tools on your own computer.
 
 > **Your desktop workspace, from your phone. No Codex Cloud tasks.**
 >
@@ -58,7 +62,7 @@ Codex Web: React PWA + local Node.js HTTP/SSE server
       +-- codex app-server: chat history, messages, models, and shared queue
 ```
 
-Run the server on the same computer as Codex Desktop. This is a client for your
+In the default mode, run the server on the same computer as Codex Desktop. This is a client for your
 existing Codex installation, not a hosted agent service or a replacement for
 Codex authentication. Chat requests use the account and permissions configured
 in that installation.
@@ -66,7 +70,8 @@ in that installation.
 ## Requirements
 
 - Linux with **Node.js 24+** and **pnpm 10.29.3**.
-- Codex Desktop running locally, with an accessible IPC socket.
+- For the default `CODEX_CLI_ONLY=false` mode: Codex Desktop running locally,
+  with an accessible IPC socket. Desktop is not required when this flag is `true`.
 - The `codex` CLI installed, authenticated, and available on `PATH`.
 - For remote access: Tailscale on the host and phone, with HTTPS Serve configured.
 - For browser tests: Google Chrome. Tests use the included `playwright-core` dependency.
@@ -88,7 +93,28 @@ pnpm dev
 ```
 
 Open **http://127.0.0.1:4312** on the host. The development API uses port 4311;
-Vite proxies `/api` and `/events` to it. Keep Codex Desktop open.
+Vite proxies `/api` and `/events` to it. Keep Codex Desktop open in the default mode.
+
+### CLI-only setup
+
+Install and authenticate the Codex CLI on the host, then set this in `.env`:
+
+```dotenv
+CODEX_CLI_ONLY=true
+```
+
+Start with the same commands above. No Desktop app or IPC socket is needed.
+CLI-only live checks have been verified on Linux with Codex CLI `0.162.1`.
+Chat history, new chats, messages, images, model/reasoning/mode settings, live
+updates, queued follow-ups, and interrupts use `codex app-server`. Command and
+file-change approvals and user questions appear in the browser; approvals
+require an explicit decision and are never automatically accepted.
+
+Desktop pins/project labels, Desktop usage/reset tools, and editing sent
+messages are unavailable in CLI-only mode. Projects are grouped by their CLI
+working directory. Other server-request extensions (such as dynamic tools or
+permission-profile approvals) return an explicit unsupported-request error.
+CLI-only live verification is documented in [Testing](docs/TESTING.md).
 
 For a persistent service, password setup, private HTTPS, and iPhone installation,
 follow the [installation guide](docs/INSTALL.md). The installer builds production

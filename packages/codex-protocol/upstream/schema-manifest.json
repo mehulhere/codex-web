@@ -4,7 +4,11 @@
   "releases": {
     "0.162.0-alpha.17.2": {
       "ClientRequest.json": "5124139b61d4f5a23583db77f5590866c63b98af592bb8c9f7879f837403152b",
+      "CommandExecutionRequestApprovalResponse.json": "43e2ba18e9608cf0ae8ed81c09d6d6bc8b7aeac2fcac07c010f834be02b78f49",
+      "FileChangeRequestApprovalResponse.json": "85e8aae50d6b84e44bd7548b9ebec413aae86474da431ae3503820e8d014fc3d",
       "ServerNotification.json": "337fbb12e5784655cbc521caa09500c0ccb7ef958681e5d799d67bb95b835321",
+      "ServerRequest.json": "533f02b088f9d97311531d019ac62959f45658258a2c3b537643dd1b4fb8190b",
+      "ToolRequestUserInputResponse.json": "684235450b7145dd0aa7f7e47f91064aeaa6b04ff8f24ef4079a15d285d934ff",
       "v1/InitializeParams.json": "84dd3919afc8bfeb16377ffcc9772e7232f397652d4c5ca46551e1a578e1ce99",
       "v1/InitializeResponse.json": "3d99b782887a1f6a83036d843d7e3a1547470f796efea8532772e9abafe52180",
       "v2/CollaborationModeListParams.json": "a2c799262a3ce3c19ef5cdd983bf3d12b43ab3c426227091b909dcb7054738c0",
@@ -56,7 +60,11 @@
     },
     "0.162.1": {
       "ClientRequest.json": "7230df580c2ba03482c4bf17bcde7146f98cc3ab48f9ddc8056a164aba8f5488",
+      "CommandExecutionRequestApprovalResponse.json": "43e2ba18e9608cf0ae8ed81c09d6d6bc8b7aeac2fcac07c010f834be02b78f49",
+      "FileChangeRequestApprovalResponse.json": "85e8aae50d6b84e44bd7548b9ebec413aae86474da431ae3503820e8d014fc3d",
       "ServerNotification.json": "566f4b875dc1a0784e68747db5e761fadae5e822a7a3725c038ec785d06d55a1",
+      "ServerRequest.json": "533f02b088f9d97311531d019ac62959f45658258a2c3b537643dd1b4fb8190b",
+      "ToolRequestUserInputResponse.json": "684235450b7145dd0aa7f7e47f91064aeaa6b04ff8f24ef4079a15d285d934ff",
       "v1/InitializeParams.json": "84dd3919afc8bfeb16377ffcc9772e7232f397652d4c5ca46551e1a578e1ce99",
       "v1/InitializeResponse.json": "3d99b782887a1f6a83036d843d7e3a1547470f796efea8532772e9abafe52180",
       "v2/CollaborationModeListParams.json": "a2c799262a3ce3c19ef5cdd983bf3d12b43ab3c426227091b909dcb7054738c0",

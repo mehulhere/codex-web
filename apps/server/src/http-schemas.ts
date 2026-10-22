@@ -63,7 +63,8 @@ export const HealthResponseSchema = z
         ipcConnected: z.boolean(),
         ipcInitialized: z.boolean(),
         requiresAuth: z.boolean(),
-        multiAccount: z.boolean()
+        multiAccount: z.boolean(),
+        cliOnly: z.boolean().default(false)
       })
       .strict()
   })

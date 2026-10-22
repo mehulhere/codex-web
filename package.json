@@ -15,6 +15,7 @@
     "verify": "pnpm build && pnpm test && pnpm typecheck && pnpm lint",
     "sanitize:traces": "node scripts/sanitize-traces.mjs",
     "test:pwa-queue": "node scripts/pwa-queue-test.mjs",
+    "test:cli-only": "node --test scripts/cli-only.test.mjs",
     "check:public": "node scripts/check-public-source.mjs",
     "protocol:check": "node scripts/protocol-schema.mjs check",
     "protocol:capture": "node scripts/protocol-schema.mjs capture",

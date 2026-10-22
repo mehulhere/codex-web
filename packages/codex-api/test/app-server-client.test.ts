@@ -127,6 +127,20 @@ describe("AppServerClient.listThreads", () => {
 });
 
 describe("AppServerClient task ownership", () => {
+  it("forwards raw app-server notifications without starting a child process", () => {
+    const listener = vi.fn();
+    const unsubscribe = vi.fn();
+    const transport: AppServerTransport = {
+      request: vi.fn(),
+      close: vi.fn(),
+      onNotification: vi.fn(() => unsubscribe)
+    };
+    const client = new AppServerClient(transport);
+
+    expect(client.onNotification(listener)).toBe(unsubscribe);
+    expect(transport.onNotification).toHaveBeenCalledWith(listener);
+  });
+
   it("registers completion notifications on the child transport without starting it", async () => {
     const transport = new ChildProcessAppServerTransport({
       executablePath: process.execPath,

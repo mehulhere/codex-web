@@ -1,4 +1,5 @@
 import { multiAccountEnabled } from "./account-mode.js";
+import { CliOnlySettingSchema, CliRequestRegistry } from "./cli-runtime.js";
 import http, { type ServerResponse } from "node:http";
 import path from "node:path";
 import fs from "node:fs";
@@ -154,6 +155,7 @@ import {
 const HOST = process.env["HOST"] ?? "127.0.0.1";
 const PORT = Number(process.env["PORT"] ?? 4311);
 const SERVE_WEB = process.env["FARFIELD_SERVE_WEB"] === "1";
+const CLI_ONLY = CliOnlySettingSchema.parse(process.env["CODEX_CLI_ONLY"]);
 const WEB_ROOT = fileURLToPath(new URL("../../web/dist/", import.meta.url));
 const authService = new AuthService(HOST);
 const authConfig = authService.getConfig();
@@ -172,7 +174,7 @@ function resolveCodexExecutablePath(): string {
   }
 
   const desktopPath = "/Applications/Codex.app/Contents/Resources/codex";
-  if (fs.existsSync(desktopPath)) {
+  if (!CLI_ONLY && fs.existsSync(desktopPath)) {
     return desktopPath;
   }
 
@@ -381,6 +383,7 @@ function serializeAppServerQueue(threadId: string) {
 }
 
 async function serializeDesktopQueue(threadId: string, sessionKey: string) {
+  if (CLI_ONLY) return [];
   desktopFollowUpQueue.refreshFromDisk();
   return Promise.all(
     desktopFollowUpQueue.getNativeMessages(threadId).map(async (message) => {
@@ -441,6 +444,7 @@ const runtimeState = {
   host: HOST,
   port: PORT,
   requiresAuth: authConfig.requiresAuth,
+  cliOnly: CLI_ONLY,
   appReady: false,
   ipcConnected: false,
   ipcInitialized: false,
@@ -651,6 +655,10 @@ async function runAppServerCall<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 function requireIpcReady(res: ServerResponse): boolean {
+  if (CLI_ONLY) {
+    jsonResponse(res, 501, { ok: false, error: "This operation requires Codex Desktop" });
+    return false;
+  }
   if (runtimeState.ipcConnected && runtimeState.ipcInitialized) {
     return true;
   }
@@ -704,7 +712,7 @@ function isDebugRoute(pathname: string): boolean {
 }
 
 function scheduleIpcReconnect(): void {
-  if (shuttingDown) return;
+  if (shuttingDown || CLI_ONLY) return;
   if (reconnectTimer) {
     return;
   }
@@ -715,10 +723,22 @@ function scheduleIpcReconnect(): void {
   }, IPC_RECONNECT_DELAY_MS);
 }
 
+const cliRequests = new CliRequestRegistry(threadId => {
+  broadcastNamedSse("thread-live-state-changed", { type: "thread-live-state-changed", threadId });
+});
+const cliRefreshTimers = new Map<string, NodeJS.Timeout>();
 const appClient = new AppServerClient({
   executablePath: runtimeState.appExecutable,
   userAgent: USER_AGENT,
   cwd: DEFAULT_WORKSPACE,
+  ...(CLI_ONLY ? {
+    onServerRequest: (request: import("@farfield/api").JsonRpcServerRequest) => cliRequests.receive({
+      id: request.id, method: request.method, params: request.params
+    }),
+    onTransportClosed: () => {
+      cliRequests.close(); unmaterializedThreadSettingsById.clear(); setAppReady(false);
+    }
+  } : {}),
   onStderr: (line) => {
     const normalized = normalizeStderrLine(line);
     if (isKnownBenignAppServerStderr(normalized)) {
@@ -738,7 +758,25 @@ const stopAppServerQueueChangedListener = appClient.onQueueChanged(threadId => {
   broadcastSse({ type: "queued-follow-ups-changed", threadId });
 });
 
-const stopAppServerTurnCompletedListener = appClient.onTurnCompleted(({ threadId }) => {
+const stopCliNotifications = CLI_ONLY ? appClient.onNotification(notification => {
+  if (notification.method === "serverRequest/resolved") {
+    const resolved = z.object({ threadId: z.string(), requestId: z.union([z.string(), z.number().int()]) }).strict().parse(notification.params);
+    cliRequests.resolveRequest(resolved.threadId, resolved.requestId);
+  }
+  const params = z.object({ threadId: z.string().min(1) }).safeParse(notification.params);
+  if (!params.success || cliRefreshTimers.has(params.data.threadId)) return;
+  const { threadId } = params.data;
+  cliRefreshTimers.set(threadId, setTimeout(() => {
+    cliRefreshTimers.delete(threadId);
+    broadcastNamedSse("thread-live-state-changed", { type: "thread-live-state-changed", threadId });
+  }, 150));
+}) : () => undefined;
+
+const stopAppServerTurnCompletedListener = appClient.onTurnCompleted(({ threadId, turn }) => {
+  if (CLI_ONLY) {
+    cliRequests.cancelTurn(threadId, turn.id ?? turn.turnId ?? "");
+    return;
+  }
   void appServerFollowUpQueue
     .releaseIfIdle({
       threadId,
@@ -832,8 +870,8 @@ function enrichThreadSidebar(result: AppServerListThreadsResponse): AppServerLis
     };
   }>;
 } {
-  const state = desktopSidebarStateReader.read();
-  if (state.error) {
+  const state = CLI_ONLY ? null : desktopSidebarStateReader.read();
+  if (state?.error) {
     logger.warn(
       { filePath: state.filePath, error: state.error },
       "desktop-sidebar-state-unavailable"
@@ -845,7 +883,11 @@ function enrichThreadSidebar(result: AppServerListThreadsResponse): AppServerLis
     data: result.data.map((thread) => {
       return {
         ...thread,
-        sidebar: resolveThreadSidebarMetadata(state, thread)
+        sidebar: state ? resolveThreadSidebarMetadata(state, thread) : {
+          isPinned: false, isProjectPinned: false, isProjectless: !thread.cwd,
+          projectPath: thread.cwd ?? null, projectName: thread.cwd ? path.basename(thread.cwd) : null,
+          projectOrder: null, hasUnreadTurn: false
+        }
       };
     })
   };
@@ -873,6 +915,7 @@ async function resolveMessageDeliveryWithDiscovery(
   intent: "queue" | "steer",
   override?: string
 ): Promise<ReturnType<typeof resolveMessageDelivery>> {
+  if (CLI_ONLY) return { type: "app-server" };
   const delivery = resolveMessageDelivery(
     threadOwnerById,
     appServerOwnedThreadIds,
@@ -894,6 +937,7 @@ async function resolveSideMessageDeliveryWithDiscovery(
   threadId: string,
   override?: string
 ): Promise<ReturnType<typeof resolveSideMessageDelivery>> {
+  if (CLI_ONLY) return { type: "app-server" };
   if (appServerOwnedThreadIds.has(threadId)) {
     return { type: "app-server" };
   }
@@ -1532,7 +1576,8 @@ const server = http.createServer(async (req, res) => {
           ipcConnected: runtimeState.ipcConnected,
           ipcInitialized: runtimeState.ipcInitialized,
           requiresAuth: authConfig.requiresAuth,
-          multiAccount: multiAccountEnabled
+          multiAccount: multiAccountEnabled && !CLI_ONLY,
+          cliOnly: CLI_ONLY
         }
       });
       conditionalJsonResponse(req, res, response);
@@ -1686,11 +1731,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === "/api/accounts/resets" && req.method === "GET") {
+      if (CLI_ONLY) { jsonResponse(res, 501, { ok: false, error: "Usage resets require Codex Desktop" }); return; }
       const threadId = z.string().min(1).parse(url.searchParams.get("threadId"));
       jsonResponse(res, 200, { ok: true, status: await desktopUsageResets.status(threadId) });
       return;
     }
     if (pathname === "/api/accounts/resets" && req.method === "POST") {
+      if (CLI_ONLY) { jsonResponse(res, 501, { ok: false, error: "Usage resets require Codex Desktop" }); return; }
       const body = parseBody(ConsumeUsageResetBodySchema, await readLimitedJsonBody(req));
       const result = await desktopUsageResets.consume(body);
       jsonResponse(res, 200, { ok: true, ...result });
@@ -1698,7 +1745,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && pathname === "/api/accounts/status") {
-      if (!multiAccountEnabled) {
+      if (!multiAccountEnabled || CLI_ONLY) {
         jsonResponse(res, 404, { ok: false, error: "Multi-account mode is disabled" });
         return;
       }
@@ -1810,7 +1857,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (req.method === "GET" && segments[3] === "account-status") {
-        if (!multiAccountEnabled) {
+        if (!multiAccountEnabled || CLI_ONLY) {
           jsonResponse(res, 404, { ok: false, error: "Multi-account mode is disabled" });
           return;
         }
@@ -1848,6 +1895,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (req.method === "POST" && segments[3] === "edit-last-message") {
+        if (CLI_ONLY) { jsonResponse(res, 501, { ok: false, error: "Editing sent messages is not supported in CLI-only mode" }); return; }
         const body = parseBody(EditLastMessageBodySchema, await readLimitedJsonBody(req));
         const delivery = await resolveMessageDeliveryWithDiscovery(
           threadId,
@@ -1913,6 +1961,7 @@ const server = http.createServer(async (req, res) => {
           UpdateThreadSettingsBodySchema,
           await readLimitedJsonBody(req)
         );
+        if (CLI_ONLY) await runAppServerCall(() => appClient.resumeThreadMetadata(threadId));
         await runAppServerCall(() =>
           appClient.updateThreadSettings({ threadId, ...body })
         );
@@ -1949,15 +1998,29 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (req.method === "GET" && segments[3] === "live-state") {
-        const live = getThreadLiveState(threadId);
+        const live = CLI_ONLY ? {
+          ownerClientId: null,
+          conversationState: (await runAppServerCall(() => appClient.readThread(threadId, true))).thread
+        } : getThreadLiveState(threadId);
         const queuedFollowUps = await serializeFollowUpQueues(threadId, requestSessionKey ?? "local");
         jsonResponse(res, 200, {
           ok: true,
           threadId,
           ownerClientId: live.ownerClientId,
           conversationState: live.conversationState,
+          ...(CLI_ONLY ? { cliRequests: cliRequests.list(threadId) } : {}),
           queuedFollowUps
         });
+        return;
+      }
+
+      if (CLI_ONLY && req.method === "POST" && segments[3] === "cli-requests" && segments[4] && segments.length === 5) {
+        try {
+          cliRequests.respond(threadId, decodeURIComponent(segments[4]), await readLimitedJsonBody(req));
+          jsonResponse(res, 200, { ok: true });
+        } catch (error) {
+          jsonResponse(res, 409, { ok: false, error: toErrorMessage(error) });
+        }
         return;
       }
 
@@ -1987,6 +2050,7 @@ const server = http.createServer(async (req, res) => {
               return;
             }
           } else if (req.method === "POST" && segments[5] === "steer") {
+            if (CLI_ONLY) await runAppServerCall(() => appClient.resumeThreadMetadata(threadId));
             await runAppServerCall(() => appClient.sendQueuedSubmissionNow(threadId, admitted));
           } else {
             jsonResponse(res, 405, { ok: false, error: "Unsupported queued message action", threadId });
@@ -1996,10 +2060,11 @@ const server = http.createServer(async (req, res) => {
           jsonResponse(res, 200, QueuedFollowUpActionResponseSchema.parse({ ok: true, threadId, messageId: admitted.id }));
           return;
         }
-        desktopFollowUpQueue.refreshFromDisk();
+        if (!CLI_ONLY) desktopFollowUpQueue.refreshFromDisk();
         let ownerClientId = threadOwnerById.get(threadId) ?? null;
         let ownerDiscoveryError: string | null = null;
         if (
+          !CLI_ONLY &&
           !ownerClientId &&
           !appServerOwnedThreadIds.has(threadId) &&
           !desktopFollowUpQueue.hasThread(threadId)
@@ -2105,7 +2170,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         if (req.method === "POST" && segments[5] === "steer") {
-          if (!requireIpcReady(res)) return;
+          if (!CLI_ONLY && !requireIpcReady(res)) return;
           if (isDesktopQueue) {
             let resolvedOwnerClientId = ownerClientId;
             if (!resolvedOwnerClientId) {
@@ -2209,7 +2274,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         const deliveryStartedAtMs = Date.now();
-        const delivery = resolveComposerMessageDelivery(
+        const delivery = CLI_ONLY ? { type: "app-server" as const } : resolveComposerMessageDelivery(
           appServerOwnedThreadIds,
           threadId,
           unmaterializedThreadSettingsById.has(threadId)
@@ -2256,6 +2321,7 @@ const server = http.createServer(async (req, res) => {
               return acknowledgement;
             },
             sendAppServer: async (isDesktopFallback) => {
+              if (CLI_ONLY) appServerOwnedThreadIds.add(threadId);
               const imagePaths = toImagePaths(resolvedImages);
               const initialSettings = unmaterializedThreadSettingsById.get(threadId);
               if (initialSettings) {
@@ -2355,6 +2421,13 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (req.method === "POST" && segments[3] === "collaboration-mode") {
+        if (CLI_ONLY) {
+          const body = parseBody(SetModeBodySchema, await readLimitedJsonBody(req));
+          await runAppServerCall(() => appClient.resumeThreadMetadata(threadId));
+          await runAppServerCall(() => appClient.updateThreadSettings({ threadId, collaborationMode: body.collaborationMode }));
+          jsonResponse(res, 200, { ok: true, threadId, ownerClientId: null });
+          return;
+        }
         if (!requireIpcReady(res)) {
           return;
         }
@@ -2474,7 +2547,7 @@ const server = http.createServer(async (req, res) => {
           const appServerActive = hasKnownDesktopOwner
             ? false
             : await hasAppServerActiveTurn(threadId);
-          delivery = resolveInterruptDelivery(
+          delivery = CLI_ONLY ? { type: "app-server" } : resolveInterruptDelivery(
             threadOwnerById,
             threadId,
             appServerActive,
@@ -2807,6 +2880,12 @@ async function bootstrapConnections(): Promise<void> {
       pushSystem("App-server bootstrap failed", { error: errorMessage });
     }
 
+    if (CLI_ONLY) {
+      broadcastRuntimeState();
+      bootstrapInFlight = null;
+      return;
+    }
+
     try {
       if (shuttingDown) return;
       if (!ipcClient.isConnected()) {
@@ -2889,6 +2968,7 @@ async function start(): Promise<void> {
         }
       })
       .then(async () => {
+        if (CLI_ONLY) return;
         for (const threadId of appServerFollowUpQueue.threadIds()) {
           if (appServerOwnedThreadIds.has(threadId)) continue;
           const ownerClientId = threadOwnerById.get(threadId);
@@ -2951,6 +3031,10 @@ async function shutdown(): Promise<void> {
 
   stopAppServerTurnCompletedListener();
   stopAppServerQueueChangedListener();
+  stopCliNotifications();
+  for (const timer of cliRefreshTimers.values()) clearTimeout(timer);
+  cliRefreshTimers.clear();
+  cliRequests.close();
   await ipcClient.disconnect();
   await appClient.close();
 

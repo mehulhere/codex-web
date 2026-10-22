@@ -133,13 +133,13 @@ export async function runPwaSmokeTest(input) {
 
     async function verifyUi() {
       const health = HealthResponseSchema.parse(await (await waitObserved("health")).json());
-      assert(health.state.appReady && health.state.ipcConnected && health.state.ipcInitialized,
+      assert(health.state.appReady && (health.state.cliOnly || (health.state.ipcConnected && health.state.ipcInitialized)),
         "Codex app-server or Desktop IPC is not ready");
       const history = HistoryResponseSchema.parse(await (await waitObserved("history")).json());
       const settings = ThreadSettingsResponseSchema.parse(await (await waitObserved("settings")).json());
       await waitObserved("models");
       await waitObserved("events");
-      await page.getByLabel("Desktop connected", { exact: true }).waitFor({ state: "visible" });
+      await page.getByLabel(health.state.cliOnly ? "CLI connected" : "Desktop connected", { exact: true }).waitFor({ state: "visible" });
       await page.waitForURL(`${options.origin}/threads/${encodeURIComponent(history.thread.id)}`);
       const conversation = page.getByRole("log", { name: "Conversation" });
       await conversation.waitFor({ state: "visible" });
@@ -211,7 +211,8 @@ export async function runPwaSmokeTest(input) {
     }
 
     await verifyUi();
-    checks.push("healthy-desktop-and-app-server", "rendered-history", "mobile-conversation-width", "live-event-stream", "model-picker");
+    const readyHealth = HealthResponseSchema.parse(await (await waitObserved("health")).json());
+    checks.push(readyHealth.state.cliOnly ? "healthy-cli-app-server" : "healthy-desktop-and-app-server", "rendered-history", "mobile-conversation-width", "live-event-stream", "model-picker");
     await page.getByRole("button", { name: "Open tasks", exact: true }).click();
     await page.locator("aside:visible").waitFor({ state: "visible" });
     assert(await page.locator("aside:visible button").count() > 1, "Task sidebar is empty");

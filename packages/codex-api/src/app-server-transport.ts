@@ -7,11 +7,22 @@ import {
 } from "./errors.js";
 import {
   type JsonRpcNotification,
+  type JsonRpcServerRequest,
   JsonRpcRequestSchema,
+  JsonRpcServerResponseSchema,
   parseJsonRpcIncomingMessage
 } from "./json-rpc.js";
 
 export type AppServerNotificationListener = (notification: JsonRpcNotification) => void;
+export type AppServerServerRequestHandler = (request: JsonRpcServerRequest) => unknown | Promise<unknown>;
+export type AppServerTransportClosedHandler = (error: AppServerTransportError) => void;
+
+export class AppServerServerRequestError extends Error {
+  public constructor(public readonly code: number, message: string, public readonly data?: unknown) {
+    super(message);
+    this.name = "AppServerServerRequestError";
+  }
+}
 
 export interface AppServerTransport {
   request(method: string, params: unknown, timeoutMs?: number): Promise<unknown>;
@@ -32,6 +43,8 @@ export interface ChildProcessAppServerTransportOptions {
   env?: NodeJS.ProcessEnv;
   requestTimeoutMs?: number;
   onStderr?: (line: string) => void;
+  onServerRequest?: AppServerServerRequestHandler;
+  onTransportClosed?: AppServerTransportClosedHandler;
 }
 
 export class ChildProcessAppServerTransport implements AppServerTransport {
@@ -41,6 +54,8 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
   private readonly env: NodeJS.ProcessEnv | undefined;
   private readonly requestTimeoutMs: number;
   private readonly onStderr: ((line: string) => void) | undefined;
+  private readonly onServerRequest: AppServerServerRequestHandler | undefined;
+  private readonly onTransportClosed: AppServerTransportClosedHandler | undefined;
   private process: ChildProcessWithoutNullStreams | null = null;
   private readonly pending = new Map<number, PendingRequest>();
   private readonly notificationListeners = new Set<AppServerNotificationListener>();
@@ -55,6 +70,8 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
     this.env = options.env;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
     this.onStderr = options.onStderr;
+    this.onServerRequest = options.onServerRequest;
+    this.onTransportClosed = options.onTransportClosed;
   }
 
   private ensureStarted(): void {
@@ -73,23 +90,26 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
       stdio: ["pipe", "pipe", "pipe"]
     });
 
-    child.on("exit", (code, signal) => {
-      const reason = `app-server exited (code=${String(code)}, signal=${String(signal)})`;
-      this.rejectAll(new AppServerTransportError(reason));
+    const closeChild = (error: AppServerTransportError): void => {
+      if (this.process !== child) return;
+      this.rejectAll(error);
       this.process = null;
       this.initialized = false;
       this.initializeInFlight = null;
+      try { this.onTransportClosed?.(error); } catch { /* Callback errors cannot affect transport cleanup. */ }
+    };
+
+    child.on("exit", (code, signal) => {
+      closeChild(new AppServerTransportError(`app-server exited (code=${String(code)}, signal=${String(signal)})`));
     });
 
     child.on("error", (error) => {
-      this.rejectAll(new AppServerTransportError(`app-server process error: ${error.message}`));
-      this.process = null;
-      this.initialized = false;
-      this.initializeInFlight = null;
+      closeChild(new AppServerTransportError(`app-server process error: ${error.message}`));
     });
 
     const lineReader = readline.createInterface({ input: child.stdout });
     lineReader.on("line", (line) => {
+      if (this.process !== child) return;
       const trimmed = line.trim();
       if (!trimmed) {
         return;
@@ -112,6 +132,11 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
             `app-server response schema mismatch: ${error instanceof Error ? error.message : String(error)}`
           )
         );
+        return;
+      }
+
+      if (message.kind === "server-request") {
+        void this.handleServerRequest(child, message.value);
         return;
       }
 
@@ -159,6 +184,29 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
     });
 
     this.process = child;
+  }
+
+  private async handleServerRequest(
+    child: ChildProcessWithoutNullStreams,
+    request: JsonRpcServerRequest
+  ): Promise<void> {
+    try {
+      if (!this.onServerRequest) {
+        throw new AppServerServerRequestError(-32601, `Unsupported app-server request: ${request.method}`);
+      }
+      const result = await this.onServerRequest(request);
+      if (this.process !== child) return;
+      child.stdin.write(`${JSON.stringify(JsonRpcServerResponseSchema.parse({ id: request.id, result: result ?? null }))}\n`, () => undefined);
+    } catch (error) {
+      if (this.process !== child) return;
+      const code = error instanceof AppServerServerRequestError ? error.code : -32603;
+      const message = error instanceof Error ? error.message : String(error);
+      const data = error instanceof AppServerServerRequestError ? error.data : undefined;
+      child.stdin.write(`${JSON.stringify(JsonRpcServerResponseSchema.parse({
+        id: request.id,
+        error: { code, message, ...(data === undefined ? {} : { data }) }
+      }))}\n`, () => undefined);
+    }
   }
 
   private rejectAll(error: Error): void {
@@ -277,6 +325,12 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
     this.initialized = false;
     this.initializeInFlight = null;
     this.rejectAll(new AppServerTransportError("app-server transport closed"));
+
+    try {
+      this.onTransportClosed?.(new AppServerTransportError("app-server transport closed"));
+    } catch {
+      // Callback errors cannot affect transport cleanup.
+    }
 
     processHandle.kill("SIGTERM");
   }

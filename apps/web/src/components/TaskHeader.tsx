@@ -9,6 +9,7 @@ interface TaskHeaderProps {
   onRefresh: () => void;
   refreshing?: boolean;
   actions?: ReactNode;
+  cliOnly?: boolean;
 }
 
 export function TaskHeader({
@@ -17,7 +18,8 @@ export function TaskHeader({
   onOpenTasks,
   onRefresh,
   refreshing = false,
-  actions
+  actions,
+  cliOnly = false
 }: TaskHeaderProps): React.JSX.Element {
   const connected = connectionState === "connected";
   return (
@@ -36,7 +38,7 @@ export function TaskHeader({
         <div className="truncate text-[15px] font-medium tracking-[-0.01em]">{title}</div>
       </div>
       <span
-        aria-label={connected ? "Desktop connected" : "Desktop reconnecting"}
+        aria-label={cliOnly ? (connected ? "CLI connected" : "CLI reconnecting") : (connected ? "Desktop connected" : "Desktop reconnecting")}
         className={`h-2 w-2 shrink-0 rounded-full ${connected ? "bg-emerald-500" : "bg-amber-500"}`}
       />
       <Button

@@ -50,6 +50,7 @@ import { z } from "zod";
 import {
   AppServerTransport,
   ChildProcessAppServerTransport,
+  type AppServerNotificationListener,
   type ChildProcessAppServerTransportOptions
 } from "./app-server-transport.js";
 
@@ -144,6 +145,14 @@ export class AppServerClient {
 
   public async close(): Promise<void> {
     await this.transport.close();
+  }
+
+  public onNotification(listener: AppServerNotificationListener): () => void {
+    const subscribe = this.transport.onNotification;
+    if (!subscribe) {
+      throw new Error("App-server transport does not publish notifications");
+    }
+    return subscribe.call(this.transport, listener);
   }
 
   public async listQueuedSubmissions(threadId: string): Promise<AppServerQueuedSubmission[]> {
