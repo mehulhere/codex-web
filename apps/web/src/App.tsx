@@ -1,3 +1,5 @@
+import { CliRequests } from "@/components/CliRequests";
+import { replyToCliRequest } from "@/lib/api";
 import {
   useCallback,
   useEffect,
@@ -461,6 +463,7 @@ export function App(): React.JSX.Element {
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState("");
   const [health, setHealth] = useState<Health | null>(null);
+  const cliOnly = health?.state.cliOnly === true;
   const multiAccountEnabled = health?.state.multiAccount === true;
   const [threads, setThreads] = useState<ThreadsResponse["data"]>([]);
   const [threadListLoaded, setThreadListLoaded] = useState(false);
@@ -725,12 +728,10 @@ export function App(): React.JSX.Element {
     : "Not reported";
   const allSystemsReady =
     health?.state.appReady === true &&
-    health?.state.ipcConnected === true &&
-    health?.state.ipcInitialized === true;
+    (cliOnly || (health?.state.ipcConnected === true && health?.state.ipcInitialized === true));
   const hasAnySystemFailure =
     health?.state.appReady === false ||
-    health?.state.ipcConnected === false ||
-    health?.state.ipcInitialized === false;
+    (!cliOnly && (health?.state.ipcConnected === false || health?.state.ipcInitialized === false));
   const systemStatusLabel = allSystemsReady
     ? "Systems ready"
     : hasAnySystemFailure
@@ -2278,7 +2279,7 @@ export function App(): React.JSX.Element {
       </div>
 
       <div className="p-3 border-t border-sidebar-border shrink-0 flex items-center gap-1.5">
-        {multiAccountEnabled
+        {cliOnly ? <span className="text-xs text-muted-foreground">Codex CLI</span> : multiAccountEnabled
           ? <AccountQuotaStrip status={accountStatus} now={Date.now()} />
           : <Button variant="ghost" size="sm" onClick={() => void openAccountsPanel()}>Usage and resets</Button> }
         <Tooltip>
@@ -2302,8 +2303,8 @@ export function App(): React.JSX.Element {
           <TooltipContent side="top" align="start" className="space-y-1 text-xs">
             <div className="font-medium">{systemStatusLabel}</div>
             <div>App: {health?.state.appReady ? "ok" : "not ready"}</div>
-            <div>IPC: {health?.state.ipcConnected ? "connected" : "disconnected"}</div>
-            <div>Init: {health?.state.ipcInitialized ? "ready" : "not ready"}</div>
+            {!cliOnly && <div>IPC: {health?.state.ipcConnected ? "connected" : "disconnected"}</div>}
+            {!cliOnly && <div>Init: {health?.state.ipcInitialized ? "ready" : "not ready"}</div>}
           </TooltipContent>
         </Tooltip>
         <Tooltip>
@@ -2510,6 +2511,7 @@ export function App(): React.JSX.Element {
       >
 
         <TaskHeader
+          cliOnly={cliOnly}
           title={selectedThread ? threadLabel(selectedThread) : "No thread selected"}
           connectionState={liveConnectionState}
           onOpenTasks={() => setMobileSidebarOpen(true)}
@@ -2540,9 +2542,9 @@ export function App(): React.JSX.Element {
             >
               <GitBranch size={14} />
             </IconBtn>
-            <IconBtn onClick={() => void openAccountsPanel()} title={multiAccountEnabled ? "All account statuses" : "Usage and resets"}>
+            {!cliOnly && <IconBtn onClick={() => void openAccountsPanel()} title={multiAccountEnabled ? "All account statuses" : "Usage and resets"}>
               <Users size={14} />
-            </IconBtn>
+            </IconBtn>}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -2653,7 +2655,7 @@ export function App(): React.JSX.Element {
             account={accountStatus?.accountDisplay ?? "Not assigned"}
             quota={statusQuota}
             connection={
-              health?.state.appReady && health.state.ipcConnected && liveConnectionState === "connected"
+              health?.state.appReady && (cliOnly || health.state.ipcConnected) && liveConnectionState === "connected"
                 ? "Connected"
                 : "Reconnecting"
             }
@@ -2873,7 +2875,7 @@ export function App(): React.JSX.Element {
                                     renderAsReasoningActivityGroup={renderAsReasoningActivityGroup}
                                     threadId={selectedThreadId ?? undefined}
                                     turnId={turnId}
-                                    canEditUserMessage={item.id === latestEditableUserItemId}
+                                    canEditUserMessage={!cliOnly && item.id === latestEditableUserItemId}
                                     canForkAssistantTurn={
                                       item.type === "agentMessage" &&
                                       item.phase !== "commentary" &&
@@ -2947,6 +2949,12 @@ export function App(): React.JSX.Element {
               <div className="max-w-3xl mx-auto space-y-2">
 
                 {/* Pending user input */}
+                {cliOnly && selectedThreadId && liveState?.threadId === selectedThreadId && !!liveState.cliRequests?.length && (
+                  <CliRequests key={selectedThreadId} requests={liveState.cliRequests} onReply={async (id, reply) => {
+                    await replyToCliRequest(selectedThreadId, id, reply);
+                    await loadSelectedThreadLive(selectedThreadId);
+                  }} />
+                )}
                 <AnimatePresence>
                   {activeRequest && (
                     <PendingRequestCard

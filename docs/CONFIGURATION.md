@@ -12,6 +12,7 @@ and startup-test settings there so both processes use the same values.
 | Variable | Purpose / default |
 | --- | --- |
 | `MULTI_ACCOUNT` | Exactly `true` or `false`; default `false`. Enables router account lists, pool quotas, and account-status polling/endpoints. |
+| `CODEX_CLI_ONLY` | Exactly `true` or `false`; default `false`. With `false`, keeps Desktop IPC and Desktop ownership behavior. With `true`, uses only the authenticated CLI app-server and skips all Desktop connections, discovery, sidebar/queue state reads, and Desktop usage/reset tools. Restart after changing. |
 | `HOST` | API bind address; default `127.0.0.1`. The service template sets `0.0.0.0`; restrict network access to trusted clients. |
 | `PORT` | API port; development defaults to `4311`, installed service to `4312`. |
 | `FARFIELD_SERVE_WEB` | `1` serves built `apps/web/dist` assets from the API server. |
@@ -44,3 +45,37 @@ Desktop host's tools, when supported.
 
 Changing this switch needs a server restart, not a frontend rebuild. Changing
 application source still requires a build.
+
+## CLI-only mode
+
+Leave `CODEX_CLI_ONLY=false` for the Desktop companion. Set it to `true` only
+for a standalone CLI installation. For an installed service, put it in the
+private service environment file too; process environment values override `.env`.
+The server advertises the mode through authenticated health state, so the same
+frontend build supports both modes. Invalid values stop startup with an error.
+
+CLI-only mode inherits the CLI's account, sandbox and approval policy; enabling
+it does not grant permissions or change authentication. Run it as the same OS
+user and with the same `CODEX_HOME` as the CLI whose chats you want to continue.
+The PWA owns the turns it starts. Concurrent control of a running turn from an
+independent terminal process is not promised. Stop that turn before resuming it
+from the PWA. Local follow-ups queued during a PWA turn survive browser reloads,
+but remain in the server's memory and do not survive a PWA service restart.
+
+Desktop-specific controls are hidden or return HTTP 501. Sent-message editing
+is disabled because this client's legacy rollback action is not supported by
+the verified CLI contract. Command/file approvals support one-time decisions;
+session-wide policy amendments are not offered. Unknown server requests fail
+explicitly instead of receiving an automatic approval. Pending approvals expire
+when their turn completes, the server resolves them, the transport closes, or
+after ten minutes. No approval is persisted.
+
+The native CLI queue belongs to the app-server process that accepted it. To
+explicitly admit a text-only queue entry without starting a turn, authenticated
+CLI-only clients can `POST /api/threads/:threadId/queue` with `{ "text": "..." }`.
+The chat must be idle with no local follow-ups. Its idle engine is released
+before admission so Codex does not immediately consume the entry. The response
+contains `messageId`; the existing queue read/edit/delete/steer routes operate
+on that same native record. Resuming or starting the chat can consume it. The
+live verifier uses this route in CLI-only mode instead
+of assuming a separate CLI process shares Desktop's admitted queue.

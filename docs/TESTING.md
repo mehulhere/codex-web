@@ -1,5 +1,23 @@
 # Testing
 
+## CLI-only regression and live checks
+
+After `pnpm build`, run `pnpm test:cli-only`. This starts the actual HTTP server
+and built PWA against a synthetic app-server executable, opens Chrome, and
+tests send/reload/resume, command and file approvals, questions, queued follow-up
+visibility/edit/delete, settings, and interruption. A listening fake Desktop
+socket must receive zero connections with `CODEX_CLI_ONLY=true`. Separate tests
+require Desktop IPC and reject existing-chat sends when the flag is `false` or
+unset and IPC has not initialized. No account or model usage is needed.
+
+The normal `pnpm test` includes these checks. `pnpm test:pwa` also accepts a
+CLI-only server: it reads the authenticated mode from health state and requires
+the correct connection status. Real send/reload/resume and queue checks must
+use a dedicated registered test chat and consume Codex usage. When testing a
+candidate alongside an installed PWA, use a separate port, private
+`XDG_STATE_HOME`, and `CODEX_MOBILE_PWA_URL` to isolate its test chat and reports.
+Never stop Desktop or change the production service to simulate a CLI-only host.
+
 ## Source and regression tests
 
 ```bash

@@ -28,7 +28,8 @@ const JsonNodeSchema = z.lazy(() => z.union([
 const annotations = new Set(["description", "title", "examples", "$comment", "$schema"]);
 const schemaMaps = new Set(["properties", "definitions", "$defs", "patternProperties"]);
 export const watchedSchemas = [
-  "ClientRequest.json", "ServerNotification.json",
+  "ClientRequest.json", "ServerNotification.json", "ServerRequest.json",
+  "CommandExecutionRequestApprovalResponse.json", "FileChangeRequestApprovalResponse.json", "ToolRequestUserInputResponse.json",
   "v1/InitializeParams.json", "v1/InitializeResponse.json",
   ...["ModelList", "CollaborationModeList", "ThreadList", "ThreadRead", "ThreadStart", "ThreadResume",
     "ThreadFork", "ThreadSettingsUpdate", "ThreadDelete", "ThreadInjectItems", "ThreadCompactStart",

@@ -1,8 +1,27 @@
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { resolve } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerPwa } from "../src/pwa";
+
+afterEach(() => vi.unstubAllGlobals());
+
+async function controllerHarness(alreadyControlled: boolean) {
+  vi.resetModules();
+  let changed = () => {};
+  const reload = vi.fn();
+  const controller: object | null = alreadyControlled ? {} : null;
+  const worker = {
+    controller,
+    register: vi.fn(async () => ({ scope: "/" })),
+    addEventListener: (_name: string, handler: () => void) => { changed = handler; }
+  };
+  vi.stubGlobal("navigator", { serviceWorker: worker });
+  vi.stubGlobal("window", { location: { reload } });
+  const { registerPwa: register } = await import("../src/pwa");
+  await register();
+  return { reload, activate: () => { worker.controller = {}; changed(); } };
+}
 
 describe("installable PWA", () => {
   it("declares standalone Codex Mobile metadata", () => {
@@ -30,6 +49,23 @@ describe("installable PWA", () => {
       updateViaCache: "none"
     });
     expect(addEventListener).toHaveBeenCalledWith("controllerchange", expect.any(Function));
+  });
+
+  it("keeps first-install input intact, then reloads once for a later worker update", async () => {
+    const worker = await controllerHarness(false);
+    worker.activate();
+    expect(worker.reload).not.toHaveBeenCalled();
+    worker.activate();
+    expect(worker.reload).toHaveBeenCalledTimes(1);
+    worker.activate();
+    expect(worker.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("reloads once when an already controlled page receives an updated worker", async () => {
+    const worker = await controllerHarness(true);
+    worker.activate();
+    worker.activate();
+    expect(worker.reload).toHaveBeenCalledTimes(1);
   });
 
   it("reloads controlled windows when a newer shell worker activates", async () => {
