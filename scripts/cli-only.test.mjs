@@ -145,6 +145,14 @@ test("CLI-only new chat supports settings, reload and first send before any roll
     browser = await chromium.launch({ channel: "chrome", headless: true });
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     page = await context.newPage(); page.setDefaultTimeout(10_000);
+    // Hold first installation until a password has been typed, reproducing slow
+    // worker activation without relying on CI network timing.
+    await page.addInitScript(() => {
+      const register = navigator.serviceWorker.register.bind(navigator.serviceWorker);
+      navigator.serviceWorker.register = (...args) => new Promise((resolve, reject) => {
+        window.addEventListener("pwa-test-register", () => { void register(...args).then(resolve, reject); }, { once: true });
+      });
+    });
     const failures = [];
     page.on("response", response => {
       if (!response.url().startsWith(app.origin + "/api/") && response.url() !== app.origin + "/events") return;
@@ -155,6 +163,10 @@ test("CLI-only new chat supports settings, reload and first send before any roll
     page.on("pageerror", error => failures.push(error.message));
     await page.goto(`${app.origin}/threads/thread-cli`);
     await page.getByLabel("Password", { exact: true }).fill("synthetic-password");
+    await page.evaluate(() => window.dispatchEvent(new Event("pwa-test-register")));
+    await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await page.getByLabel("Password", { exact: true }).inputValue(), "synthetic-password", "First worker activation erased the password");
     const [login] = await Promise.all([
       page.waitForResponse(response => new URL(response.url()).pathname === "/api/auth/login" && response.request().method() === "POST"),
       page.getByRole("button", { name: "Unlock", exact: true }).click()
