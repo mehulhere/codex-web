@@ -25,8 +25,13 @@ jobs:
           pnpm install --frozen-lockfile
       - name: Verify recorded upstream protocol releases
         run: pnpm protocol:verify-releases
-      - name: Install browser for regression tests
-        run: pnpm --filter @farfield/server exec playwright-core install --with-deps chrome
+      - name: Prepare browser for regression tests
+        run: |
+          if command -v google-chrome >/dev/null 2>&1; then
+            google-chrome --version
+          else
+            pnpm --filter @farfield/server exec playwright-core install --with-deps chrome
+          fi
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm lint
