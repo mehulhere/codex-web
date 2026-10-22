@@ -9,6 +9,19 @@ Codex Web is a self-hosted PWA for reading and continuing chats running on your
 own Linux computer. Open a chat from your phone, follow the agent's work, send a
 follow-up, and see the same queue on Desktop and the web.
 
+> **Your desktop workspace, from your phone. No Codex Cloud tasks.**
+>
+> Codex Web connects to Codex running on your own computer. Commands, tools,
+> tests, and file changes run in that computer's existing workspace. You can
+> continue a chat from your phone and return to the same work on Desktop.
+> Codex Web does not create a cloud workspace or require uploading your
+> repository to a hosted execution service. Your computer must stay awake and
+> connected for remote control.
+
+Model requests still go to the provider configured in your Codex installation.
+"No Codex Cloud" describes where your workspace and tools run; it does not mean
+model inference is offline or runs on your phone.
+
 The interface and local service are named **Codex Mobile**. Package names keep
 Farfield's original `@farfield/*` namespace for compatibility.
 
