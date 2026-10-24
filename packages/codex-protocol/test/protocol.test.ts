@@ -24,6 +24,39 @@ import {
 } from "../src/index.js";
 
 describe("codex-protocol schemas", () => {
+  it("accepts Codex 0.164 read receipts without weakening their validation", () => {
+    const readState = { revision: "revision-1", firstUnread: { type: "turn", turnId: "turn-1" } };
+    expect(parseAppServerListThreadsResponse({ data: [], readStates: { "thread-1": readState } }))
+      .toMatchObject({ readStates: { "thread-1": readState } });
+    expect(parseAppServerReadThreadResponse({ thread: { id: "thread-1", turns: [] }, readState }))
+      .toMatchObject({ readState });
+    expect(parseAppServerListThreadsResponse({ data: [], readStates: null }).readStates).toBeNull();
+    expect(parseAppServerReadThreadResponse({ thread: { id: "thread-1", turns: [] }, readState: null }).readState).toBeNull();
+    for (const state of [{ revision: "r" }, { revision: "r", firstUnread: null },
+      { revision: "r", firstUnread: { type: "threadStart" } }]) {
+      expect(parseAppServerReadThreadResponse({ thread: { id: "thread-1", turns: [] }, readState: state }).readState).toEqual(state);
+    }
+    for (const invalid of [{ revision: 1 }, { revision: "r", firstUnread: { type: "turn" } },
+      { revision: "r", extra: true }]) {
+      expect(() => parseAppServerListThreadsResponse({ data: [], readStates: { "thread-1": invalid } })).toThrow();
+      expect(() => parseAppServerReadThreadResponse({ thread: { id: "thread-1", turns: [] }, readState: invalid })).toThrow();
+    }
+  });
+
+  it("accepts stored generated images and retains observed input identities", () => {
+    const image = { id: "image-1", type: "imageGeneration", fileId: "file-1", status: "completed",
+      inputImages: [{ path: "/tmp/source.png", sha256: "a".repeat(64) }], failure: null };
+    const parsed = parseThreadConversationState({ id: "thread-1", turns: [{ id: "turn-1", status: "completed", items: [image] }] });
+    expect(parsed.turns[0]?.items[0]).toEqual(image);
+    const migrated = { ...image, result: "", failure: { type: "usageLimitExceeded", limitId: "images", resetsAt: null } };
+    expect(parseThreadConversationState({ id: "thread-1", turns: [{ status: "completed", items: [migrated] }] })
+      .turns[0]?.items[0]).toEqual(migrated);
+    for (const invalid of [{ ...image, fileId: undefined }, { ...image, extra: true },
+      { ...image, inputImages: [{ path: "/tmp/source.png", sha256: 123 }] }]) {
+      expect(() => parseThreadConversationState({ id: "thread-1", turns: [{ status: "completed", items: [invalid] }] })).toThrow();
+    }
+  });
+
   it("parses asynchronous assistant questions from current thread history", () => {
     const state = parseThreadConversationState({
       id: "thread-async",

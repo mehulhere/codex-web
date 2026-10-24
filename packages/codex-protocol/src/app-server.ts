@@ -136,9 +136,18 @@ export const AppServerThreadListItemSchema = z
   })
   .strict();
 
+export const AppServerThreadReadStateSchema = z.object({
+  revision: z.string(),
+  firstUnread: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("threadStart") }).strict(),
+    z.object({ type: z.literal("turn"), turnId: z.string() }).strict()
+  ]).nullable().optional()
+}).strict();
+
 export const AppServerListThreadsResponseSchema = z
   .object({
     data: z.array(AppServerThreadListItemSchema),
+    readStates: z.record(AppServerThreadReadStateSchema).nullable().optional(),
     nextCursor: z.string().nullable().optional(),
     backwardsCursor: z.string().nullable().optional(),
     pages: NonNegativeIntSchema.optional(),
@@ -148,7 +157,8 @@ export const AppServerListThreadsResponseSchema = z
 
 export const AppServerReadThreadResponseSchema = z
   .object({
-    thread: ThreadConversationStateSchema
+    thread: ThreadConversationStateSchema,
+    readState: AppServerThreadReadStateSchema.nullable().optional()
   })
   .strict();
 
