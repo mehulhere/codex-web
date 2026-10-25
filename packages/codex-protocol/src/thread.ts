@@ -564,14 +564,23 @@ export const ImageGenerationItemSchema = z
   .object({
     id: NonEmptyStringSchema,
     type: z.literal("imageGeneration"),
-    result: z.string(),
+    result: z.string().optional(),
+    fileId: z.string().optional(),
     status: z.string(),
+    inputImages: z.array(z.object({ path: z.string(), sha256: z.string() }).strict()).optional(),
+    failure: z.object({
+      type: z.literal("usageLimitExceeded"),
+      limitId: z.string(),
+      resetsAt: z.number().int().nullable().optional()
+    }).strict().nullable().optional(),
     revisedPrompt: z.string().nullable().optional(),
     savedPath: z.string().nullable().optional(),
     transparentBackground: z.boolean().nullable().optional(),
     src: z.string().optional()
   })
-  .strict();
+  .strict()
+  .refine((item) => item.result !== undefined || item.fileId !== undefined,
+    "Generated images require inline data or an attachment identity");
 
 export const EnteredReviewModeItemSchema = z
   .object({
@@ -616,7 +625,6 @@ const NonSteeringTurnItemSchemas = [
   CollabAgentToolCallItemSchema,
   ImageViewItemSchema,
   SleepItemSchema,
-  ImageGenerationItemSchema,
   EnteredReviewModeItemSchema,
   ExitedReviewModeItemSchema,
   SteeredItemSchema
@@ -624,6 +632,7 @@ const NonSteeringTurnItemSchemas = [
 
 const TurnItemSchemas = [
   ...NonSteeringTurnItemSchemas,
+  ImageGenerationItemSchema,
   SteeringUserMessageItemSchema
 ] as const;
 
@@ -633,6 +642,7 @@ export type TurnItemInput = z.input<(typeof TurnItemSchemas)[number]>;
 export const TurnItemSchema: z.ZodType<TurnItem, z.ZodTypeDef, TurnItemInput> =
   z.union([
     z.discriminatedUnion("type", NonSteeringTurnItemSchemas),
+    ImageGenerationItemSchema,
     SteeringUserMessageItemSchema
   ]);
 
