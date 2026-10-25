@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ThreadConversationState } from "@farfield/protocol";
+import { parseThreadConversationState, type ThreadConversationState } from "@farfield/protocol";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   MAX_THREAD_IMAGE_BYTES,
@@ -81,6 +81,18 @@ function createImageThread(localPath = "/private/screenshot.png"): ThreadConvers
 }
 
 describe("resolveThreadImage", () => {
+  it("does not treat a stored generated-image identity as a local path", () => {
+    const thread = parseThreadConversationState({ id: "thread-1", turns: [{ status: "completed", items: [{
+      id: "stored-1", type: "imageGeneration", fileId: "file-1", status: "completed",
+      inputImages: [{ path: "/tmp/input.png", sha256: "a".repeat(64) }]
+    }] }] });
+    expect(() => resolveThreadImage(thread, "stored-1", 0)).toThrow(ThreadMediaNotFoundError);
+    const image = thread.turns[0]?.items[0];
+    if (image?.type !== "imageGeneration") throw new Error("Missing synthetic image fixture");
+    image.savedPath = "/tmp/generated.png";
+    expect(resolveThreadImage(thread, "stored-1", 0)).toEqual({ type: "local", path: "/tmp/generated.png" });
+  });
+
   it("resolves only images referenced by the requested item and index", () => {
     const thread = createImageThread();
 

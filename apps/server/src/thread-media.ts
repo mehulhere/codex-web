@@ -119,7 +119,7 @@ function itemImageReferences(item: TurnItem): ThreadImageReference[] {
       if (item.savedPath) {
         return [{ type: "local", path: item.savedPath }];
       }
-      const result = optionalExternalImageReference(item.result);
+      const result = item.result === undefined ? null : optionalExternalImageReference(item.result);
       return result ? [result] : [];
     }
     case "dynamicToolCall":
